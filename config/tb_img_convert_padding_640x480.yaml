@@ -1,0 +1,26 @@
+# tb_img + ta_cv_image_convert_padding（letterbox / 画布填充，独立 API）
+/**:
+  ros__parameters:
+    input_msg: tb_img
+    input_topic: /tbmem_img
+    output_topic: /tbmem_cv_out
+    tb_img_profile: 480p
+    publish_zero_copy: true
+    output_tb_img_profile: auto
+    need_dump: false
+    publish_output: true
+    dump_prefix: usb_letterbox_
+    pipeline:
+    - convert_padding
+    convert_padding.border.preset: yolo_gray
+    convert_padding.dst_width: 640
+    convert_padding.dst_height: 640
+    convert_padding.crop.start_x: 0
+    convert_padding.crop.start_y: 0
+    convert_padding.crop.crop_w: 0
+    convert_padding.crop.crop_h: 0
+    convert_padding.padding.dst_crop_stx: 0
+    convert_padding.padding.dst_crop_sty: 80
+    convert_padding.padding.dst_crop_w: 640
+    convert_padding.padding.dst_crop_h: 480
+    convert_padding.algorithm: 1

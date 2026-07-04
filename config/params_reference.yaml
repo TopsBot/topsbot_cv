@@ -1,0 +1,66 @@
+# topsbot_cv 参数参考（不自动加载）
+#
+# 本文件是「字段字典」，不是一份可运行的场景配置。
+# 场景模板仅两类：*_image_csc*.yaml（crop/resize/csc）与 *_convert_padding*.yaml。
+# 详见 config/README.md。
+#
+# 执行模型（node_params.cpp + pipeline_executor.cpp）：
+#   1. pipeline: [crop, resize, csc, ...] — 功能开关，顺序无关
+#   2. crop / resize / csc — 合并为一次 ta_cv_image_csc_convert_to（image_csc）
+#   3. convert_padding — 独立路径 ta_cv_image_convert_padding，与上者互斥
+#
+# 未出现在 pipeline 中的算子：对应参数可省略，由 C++ 默认值 + 运行时推导
+# （如不启 crop → 整帧；不启 resize → 输出尺寸跟 crop 区域；不启 csc → 输出 NV12）。
+
+/**:
+  ros__parameters:
+  # --- 输入 / 输出（场景 yaml 必填）---
+    input_msg: sensor_image
+    input_topic: /image_raw
+    tb_img_profile: auto
+    output_topic: /image_cv_out
+    publish_output: true
+    publish_zero_copy: false
+    output_tb_img_profile: auto
+    need_dump: false
+    dump_dir: /tmp/topsbot_cv
+    dump_prefix: out_
+
+  # --- pipeline：功能开关（顺序无关）---
+    pipeline:
+    - crop
+
+  # --- crop.* — 仅 pipeline 含 crop 时需要 ---
+    crop.start_x: 0
+    crop.start_y: 0
+    crop.crop_w: 640
+    crop.crop_h: 360
+
+  # --- resize.* — 仅 pipeline 含 resize 时需要 ---
+    resize.start_x: 0
+    resize.start_y: 0
+    resize.in_width: 0               # 0 = 取 crop 后宽
+    resize.in_height: 0              # 0 = 取 crop 后高
+    resize.out_width: 640
+    resize.out_height: 360
+    resize.interpolation: 1
+    resize.stretch_fit: 0
+
+  # --- csc.* — 仅 pipeline 含 csc 时需要（输入须 NV12）---
+    csc.dst_format: rgb_packed
+    csc.csc_type: YCbCr2RGB_BT601
+
+  # --- convert_padding.* — 仅 pipeline 含 convert_padding 时需要（与 crop/resize/csc 互斥路径）---
+    convert_padding.dst_width: 640
+    convert_padding.dst_height: 640
+    convert_padding.crop.start_x: 0
+    convert_padding.crop.start_y: 0
+    convert_padding.crop.crop_w: 0   # 0 = 整帧
+    convert_padding.crop.crop_h: 0
+    convert_padding.padding.dst_crop_stx: 0
+    convert_padding.padding.dst_crop_sty: 0
+    convert_padding.padding.dst_crop_w: 640
+    convert_padding.padding.dst_crop_h: 640
+    convert_padding.algorithm: 1
+    convert_padding.border.preset: ""   # yolo_gray | black
+    convert_padding.border.rgb: [114, 114, 114]

@@ -1,0 +1,23 @@
+# file 离线 + ta_cv_image_convert_padding（letterbox / 画布填充，独立 API）
+/**:
+  ros__parameters:
+    input_msg: file
+    publish_rate: 0.0
+    need_dump: true
+    publish_output: false
+    dump_dir: /tmp/topsbot_cv
+    dump_prefix: letterbox_
+    pipeline:
+    - convert_padding
+    convert_padding.border.preset: yolo_gray
+    convert_padding.dst_width: 640
+    convert_padding.dst_height: 640
+    convert_padding.crop.start_x: 0
+    convert_padding.crop.start_y: 0
+    convert_padding.crop.crop_w: 0
+    convert_padding.crop.crop_h: 0
+    convert_padding.padding.dst_crop_stx: 0
+    convert_padding.padding.dst_crop_sty: 80
+    convert_padding.padding.dst_crop_w: 640
+    convert_padding.padding.dst_crop_h: 480
+    convert_padding.algorithm: 1

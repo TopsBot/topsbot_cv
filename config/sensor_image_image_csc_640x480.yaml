@@ -1,0 +1,25 @@
+# sensor_image + ta_cv_image_csc_convert_to（crop / resize / csc 合一 API）
+/**:
+  ros__parameters:
+    input_msg: sensor_image
+    input_topic: /image_raw
+    output_topic: /image_cv_out
+    need_dump: false
+    publish_output: true
+    dump_prefix: usb_
+    pipeline:
+    - crop
+    crop.start_x: 0
+    crop.start_y: 0
+    crop.crop_w: 640
+    crop.crop_h: 360
+    resize.start_x: 0
+    resize.start_y: 0
+    resize.in_width: 0
+    resize.in_height: 0
+    resize.out_width: 640
+    resize.out_height: 360
+    resize.interpolation: 1
+    resize.stretch_fit: 0
+    csc.dst_format: rgb_packed
+    csc.csc_type: YCbCr2RGB_BT601

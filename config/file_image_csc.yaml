@@ -1,0 +1,29 @@
+# file 离线 + ta_cv_image_csc_convert_to（crop / resize / csc 合一 API）
+# 默认输入 share/topsbot_cv/imgs/test.jpg（1920×1080）；crop 区域对齐 hobot_cv 960×540
+# 默认 pipeline 仅 crop；改 pipeline 或 launch pipeline:=crop,resize,csc 即可组合算子
+/**:
+  ros__parameters:
+    input_msg: file
+    publish_rate: 0.0
+    need_dump: true
+    publish_output: false
+    dump_dir: /tmp/topsbot_cv
+    dump_prefix: out_
+    pipeline:
+    - crop
+    - resize
+    - csc
+    crop.start_x: 0
+    crop.start_y: 0
+    crop.crop_w: 960
+    crop.crop_h: 540
+    resize.start_x: 0
+    resize.start_y: 0
+    resize.in_width: 0
+    resize.in_height: 0
+    resize.out_width: 640
+    resize.out_height: 360
+    resize.interpolation: 1
+    resize.stretch_fit: 0
+    csc.dst_format: rgb_packed
+    csc.csc_type: YCbCr2RGB_BT601
