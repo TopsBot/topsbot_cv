@@ -53,6 +53,21 @@ private:
   bool process_nv12(const TaImage & input, int width, int height);
   void publish_output(const TaImage & image, const std_msgs::msg::Header & header);
   void ensure_tb_img_publisher();
+
+  /// dmabuf fast path: let the PP stage write directly into the loaned
+  /// TbMsg payload (no publish memcpy). Returns false (borrow/LOOKUP/size)
+  /// and the caller falls back to the normal path.
+  bool try_publish_zero_copy(
+    const TaImage & input, int width, int height,
+    const std_msgs::msg::Header & header);
+  /// tb_img (NV12) input: LOOKUP phys_addr for a zero-copy input image,
+  /// then the zero-copy output path.
+  bool try_process_tb_img_zero_copy(
+    const uint8_t * data, uint32_t data_size, int width, int height,
+    uint64_t phys_addr, const std_msgs::msg::Header & header);
+  /// Create/reuse the loaned publisher for a predicted output size
+  /// (also sets output_width_/height_).
+  bool ensure_tb_img_publisher_for(int out_width, int out_height);
   bool upload_tb_nv12(
     const uint8_t * data,
     uint32_t data_size,
@@ -83,6 +98,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
   std::unique_ptr<LoanedTbImgPublisher> tb_img_pub_;
   int32_t tb_frame_index_{0};
+  bool dmabuf_mode_{false};
   rclcpp::TimerBase::SharedPtr init_timer_;
   rclcpp::TimerBase::SharedPtr file_timer_;
 };

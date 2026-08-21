@@ -2,10 +2,10 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>topsbot_cv</name>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <description>TOPSBOT hardware-accelerated image processing via ta-cv (SPP/dmabuf).</description>
 
-  <maintainer email="developer@topfuture.com">TOPSBOT</maintainer>
+  <maintainer email="developer@topsfuture.com">TOPSBOT</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

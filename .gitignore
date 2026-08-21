@@ -1,0 +1,7 @@
+# Local test / dump outputs (package root)
+/*.jpg
+
+# Build artifacts
+build/
+install/
+log/

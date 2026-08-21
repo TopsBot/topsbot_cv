@@ -86,6 +86,36 @@ ta_cv_resize_image_t build_csc_resize_attr(
 }
 }  // namespace
 
+bool predict_output_size(
+  const PipelineConfig & config,
+  const int input_width,
+  const int input_height,
+  int & out_width,
+  int & out_height)
+{
+  if (input_width <= 0 || input_height <= 0) {
+    return false;
+  }
+
+  PipelineConfig mc = config;
+  if (!mc.features.convert_padding && !any_csc_path_feature(mc.features)) {
+    mc.features.crop = true;
+  }
+
+  if (mc.features.convert_padding) {
+    out_width = mc.convert_padding_dst_width;
+    out_height = mc.convert_padding_dst_height;
+    return out_width > 0 && out_height > 0;
+  }
+
+  const ta_cv_rect_t crop_rect = resolve_crop_rect(
+    mc.features, mc.crop_rect, input_width, input_height);
+  build_csc_resize_attr(mc.features, mc, crop_rect);
+  out_width = mc.resize_rect.out_width;
+  out_height = mc.resize_rect.out_height;
+  return out_width > 0 && out_height > 0;
+}
+
 bool execute_pipeline(
   DmabufAllocator & alloc,
   const TaImage & input,

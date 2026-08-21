@@ -90,7 +90,8 @@ std::optional<Nv12Buffer> ImageSource::from_jpeg_bytes(
   const uint8_t * jpeg_data,
   const size_t jpeg_size,
   const int width_hint,
-  const int height_hint)
+  const int height_hint,
+  const uint64_t dma_phys)
 {
   if (!alloc.get() || !jpeg_data || jpeg_size == 0) {
     return std::nullopt;
@@ -98,7 +99,8 @@ std::optional<Nv12Buffer> ImageSource::from_jpeg_bytes(
 
   NV12Frame frame{};
   if (decode_jpeg_bytes_to_nv12(
-      alloc.get(), jpeg_data, jpeg_size, &frame, width_hint, height_hint) != 0)
+      alloc.get(), jpeg_data, jpeg_size, &frame, width_hint, height_hint,
+      dma_phys) != 0)
   {
     return std::nullopt;
   }

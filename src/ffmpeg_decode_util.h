@@ -33,7 +33,8 @@ int decode_jpeg_bytes_to_nv12(
   size_t jpeg_size,
   NV12Frame * out_frame,
   int width_hint = 0,
-  int height_hint = 0);
+  int height_hint = 0,
+  uint64_t dma_phys = 0);
 
 void release_nv12(NV12Frame * frame);
 

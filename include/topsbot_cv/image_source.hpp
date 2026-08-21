@@ -46,7 +46,8 @@ public:
     const uint8_t * jpeg_data,
     size_t jpeg_size,
     int width_hint = 0,
-    int height_hint = 0);
+    int height_hint = 0,
+    uint64_t dma_phys = 0);
 
   static std::optional<Nv12Buffer> from_nv12_bytes(
     DmabufAllocator & alloc,

@@ -36,7 +36,7 @@ cd topsbot_cc/topsbot_ws
 
 ```bash
 # MES20
-source /opt/ros/humble/setup.bash
+source /opt/tbros/humble/setup.bash
 source <install>/setup.bash
 ```
 

@@ -7,6 +7,7 @@
 #include <filesystem>
 
 #include "topsbot_cv/imgproc.hpp"
+#include "BufferAllocator/BufferAllocatorWrapper.h"
 #include "topsbot_cv/format_convert.hpp"
 #include "topsbot_cv/pipeline_executor.hpp"
 #include "topsbot_cv/pipeline_log.hpp"
@@ -53,7 +54,12 @@ ImageProcessorNode::ImageProcessorNode(
     node_name,
     rclcpp::NodeOptions(options).automatically_declare_parameters_from_overrides(true))
 {
-  RCLCPP_INFO(get_logger(), "topsbot_cv image_processor: node created");
+  {
+    const char * be = std::getenv("FASTDDS_DMABUF_BACKEND");
+    dmabuf_mode_ = (be != nullptr && strcmp(be, "1") == 0);
+  }
+  RCLCPP_INFO(get_logger(), "topsbot_cv image_processor: node created (dmabuf_mode=%s)",
+              dmabuf_mode_ ? "ON" : "OFF");
 }
 
 void ImageProcessorNode::schedule_initialize()
@@ -259,14 +265,22 @@ bool ImageProcessorNode::upload_tb_nv12(
 
 void ImageProcessorNode::on_tb_img_480(const tb_img_msgs::msg::TbMsg480P::ConstSharedPtr & msg)
 {
+  std_msgs::msg::Header header;
+  header.stamp = msg->time_stamp;
+  if (dmabuf_mode_ && params_.publish_zero_copy &&
+      try_process_tb_img_zero_copy(
+        msg->data.data(), msg->data_size,
+        static_cast<int>(msg->width), static_cast<int>(msg->height),
+        msg->phys_addr, header))
+  {
+    return;
+  }
   if (!upload_tb_nv12(
       msg->data.data(), msg->data_size,
       static_cast<int>(msg->width), static_cast<int>(msg->height), msg->encoding))
   {
     return;
   }
-  std_msgs::msg::Header header;
-  header.stamp = msg->time_stamp;
   if (process_nv12(input_nv12_, input_nv12_width_, input_nv12_height_)) {
     publish_output(working_output_, header);
   }
@@ -274,14 +288,22 @@ void ImageProcessorNode::on_tb_img_480(const tb_img_msgs::msg::TbMsg480P::ConstS
 
 void ImageProcessorNode::on_tb_img_540(const tb_img_msgs::msg::TbMsg540P::ConstSharedPtr & msg)
 {
+  std_msgs::msg::Header header;
+  header.stamp = msg->time_stamp;
+  if (dmabuf_mode_ && params_.publish_zero_copy &&
+      try_process_tb_img_zero_copy(
+        msg->data.data(), msg->data_size,
+        static_cast<int>(msg->width), static_cast<int>(msg->height),
+        msg->phys_addr, header))
+  {
+    return;
+  }
   if (!upload_tb_nv12(
       msg->data.data(), msg->data_size,
       static_cast<int>(msg->width), static_cast<int>(msg->height), msg->encoding))
   {
     return;
   }
-  std_msgs::msg::Header header;
-  header.stamp = msg->time_stamp;
   if (process_nv12(input_nv12_, input_nv12_width_, input_nv12_height_)) {
     publish_output(working_output_, header);
   }
@@ -289,14 +311,22 @@ void ImageProcessorNode::on_tb_img_540(const tb_img_msgs::msg::TbMsg540P::ConstS
 
 void ImageProcessorNode::on_tb_img_1080(const tb_img_msgs::msg::TbMsg1080P::ConstSharedPtr & msg)
 {
+  std_msgs::msg::Header header;
+  header.stamp = msg->time_stamp;
+  if (dmabuf_mode_ && params_.publish_zero_copy &&
+      try_process_tb_img_zero_copy(
+        msg->data.data(), msg->data_size,
+        static_cast<int>(msg->width), static_cast<int>(msg->height),
+        msg->phys_addr, header))
+  {
+    return;
+  }
   if (!upload_tb_nv12(
       msg->data.data(), msg->data_size,
       static_cast<int>(msg->width), static_cast<int>(msg->height), msg->encoding))
   {
     return;
   }
-  std_msgs::msg::Header header;
-  header.stamp = msg->time_stamp;
   if (process_nv12(input_nv12_, input_nv12_width_, input_nv12_height_)) {
     publish_output(working_output_, header);
   }
@@ -309,16 +339,34 @@ void ImageProcessorNode::on_tb_jpeg(const tb_img_msgs::msg::TbJpegFrame::ConstSh
     return;
   }
 
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 3000,
+    "TbJpegFrame: size=%u phys_addr=0x%llx", msg->data_size,
+    static_cast<unsigned long long>(msg->phys_addr));
   auto nv12 = ImageSource::from_jpeg_bytes(
     allocator_, msg->data.data(), msg->data_size,
-    static_cast<int>(msg->width), static_cast<int>(msg->height));
+    static_cast<int>(msg->width), static_cast<int>(msg->height),
+    msg->phys_addr);
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 3000,
+    "decode result: %s (phys=0x%llx)", nv12 ? "OK" : "FAIL",
+    static_cast<unsigned long long>(msg->phys_addr));
   if (!nv12) {
     RCLCPP_ERROR(get_logger(), "failed to decode TbJpegFrame (%u bytes)", msg->data_size);
     return;
   }
-
   std_msgs::msg::Header header;
   header.stamp = msg->time_stamp;
+
+  // dmabuf fast path: the PP stage writes directly into the loaned TbMsg
+  // payload (zero-copy). Requires the dmabuf backend + publish settings +
+  // NV12 output + enough capacity; otherwise fall back to the normal path.
+  if (dmabuf_mode_ && params_.publish_zero_copy &&
+      try_publish_zero_copy(nv12->image, nv12->width, nv12->height, header))
+  {
+    return;
+  }
+
   if (process_nv12(nv12->image, nv12->width, nv12->height)) {
     publish_output(working_output_, header);
   }
@@ -438,6 +486,177 @@ bool ImageProcessorNode::process_nv12(const TaImage & input, const int width, co
     return false;
   }
   output_format_ = working_output_.format();
+  return true;
+}
+
+bool ImageProcessorNode::try_process_tb_img_zero_copy(
+  const uint8_t * data, const uint32_t data_size, const int width, const int height,
+  const uint64_t phys_addr, const std_msgs::msg::Header & header)
+{
+  if (width <= 0 || height <= 0 || phys_addr == 0 || !allocator_.get()) {
+    return false;
+  }
+  // Input: wrap the upstream loaned payload via LOOKUP (skip the
+  // upload_nv12 CPU copy)
+  uint64_t view_len = data_size;
+  const int in_fd = DmabufHeapLookupByPhys(allocator_.get(), phys_addr, &view_len);
+  if (in_fd < 0) {
+    return false;
+  }
+  ta_image_t native{};
+  if (ta_cv_image_create_ext(height, width, FORMAT_NV12, &native, in_fd) != 0) {
+    close(in_fd);
+    return false;
+  }
+  TaImage input = TaImage::adopt_nv12(in_fd, width, height, data_size, native);
+  if (input.fd() < 0) {
+    return false;
+  }
+  RCLCPP_INFO_THROTTLE(
+    get_logger(), *get_clock(), 3000,
+    "zero-copy input: LOOKUP phys=0x%llx (%dx%d)",
+    static_cast<unsigned long long>(phys_addr), width, height);
+  // Output: PP writes the loaned payload directly (zero-copy)
+  return try_publish_zero_copy(input, width, height, header);
+}
+
+bool ImageProcessorNode::try_publish_zero_copy(
+  const TaImage & input,
+  const int width,
+  const int height,
+  const std_msgs::msg::Header & header)
+{
+  if (!params_.publish_output || !allocator_.get()) {
+    return false;
+  }
+
+  // Predict the PP output size (same as execute_pipeline)
+  int out_w = 0;
+  int out_h = 0;
+  if (!predict_output_size(params_.pipeline_config, width, height, out_w, out_h)) {
+    return false;
+  }
+  if (out_w <= 0 || out_h <= 0) {
+    return false;
+  }
+  const uint32_t out_size = static_cast<uint32_t>(out_w) * out_h * 3 / 2;
+  if (out_size == 0) {
+    return false;
+  }
+
+  // Non-NV12 outputs (e.g. csc to RGB) cannot fit a TbMsg -> fall back
+  if (params_.pipeline_config.features.convert_padding) {
+    // convert_padding outputs NV12, usable
+  } else if (params_.pipeline_config.features.csc) {
+    return false;
+  }
+
+  if (!ensure_tb_img_publisher_for(out_w, out_h)) {
+    return false;
+  }
+  if (!tb_img_pub_) {
+    return false;
+  }
+
+  // borrow payload -> touch pages (pagemap needs present PTEs) -> LOOKUP
+  // -> PP writes -> publish
+  const bool ok = tb_img_pub_->borrow_fill_publish(
+    [&](auto & msg) -> bool {
+      // touch：PP（DMA）写不建 CPU 页表，pagemap 反推前必须 CPU 触碰
+      {
+        volatile uint8_t * base = msg.data.data();
+        for (size_t off = 0; off < out_size; off += 4096) {
+          (void)base[off];
+        }
+      }
+      uint64_t m1_phys = 0;
+      DmabufHeapLookupPhysByPtr(allocator_.get(), msg.data.data(), &m1_phys);
+      if (m1_phys == 0) {
+        return false;
+      }
+      uint64_t view_len = out_size;
+      const int out_fd = DmabufHeapLookupByPhys(allocator_.get(), m1_phys, &view_len);
+      if (out_fd < 0) {
+        return false;
+      }
+
+      // Wrap the external fd into a ta_image_t (SDK external-memory
+      // interface: ta_cv_image_create_ext) for the PP stage output
+      ta_image_t native{};
+      if (ta_cv_image_create_ext(out_h, out_w, FORMAT_NV12, &native, out_fd) != 0) {
+        close(out_fd);
+        return false;
+      }
+      TaImage out_img = TaImage::adopt_nv12(
+        out_fd, out_w, out_h, out_size, native);
+
+      // PP (crop/resize/csc/convert_padding) writes the payload directly
+      int exec_w = 0;
+      int exec_h = 0;
+      if (!execute_pipeline(
+          allocator_, input, width, height, params_.pipeline_config,
+          out_img, exec_w, exec_h))
+      {
+        return false;
+      }
+      if (exec_w != out_w || exec_h != out_h) {
+        RCLCPP_WARN(get_logger(), "pipeline output size mismatch (%dx%d vs %dx%d)",
+                    exec_w, exec_h, out_w, out_h);
+        return false;
+      }
+
+      // 填字段 + phys_addr
+      msg.width = static_cast<uint32_t>(out_w);
+      msg.height = static_cast<uint32_t>(out_h);
+      msg.step = static_cast<uint32_t>(out_w);
+      msg.data_size = out_size;
+      fill_tb_img_encoding(msg.encoding, "nv12");
+      msg.time_stamp = header.stamp;
+      msg.index = tb_frame_index_++;
+      msg.phys_addr = m1_phys;
+      return true;
+    });
+
+  if (ok) {
+    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 3000,
+                         "zero-copy publish: %dx%d -> loaned M1",
+                         out_w, out_h);
+  }
+  return ok;
+}
+
+bool ImageProcessorNode::ensure_tb_img_publisher_for(const int out_w, const int out_h)
+{
+  if (tb_img_pub_ && output_width_ == out_w && output_height_ == out_h) {
+    return true;
+  }
+  if (tb_img_pub_) {
+    RCLCPP_WARN(get_logger(),
+                "tb_img publisher profile mismatch (%dx%d vs %dx%d); recreate",
+                output_width_, output_height_, out_w, out_h);
+    tb_img_pub_.reset();
+  }
+
+  const uint32_t payload_size = static_cast<uint32_t>(out_w) * out_h * 3 / 2;
+  TbImgProfile profile;
+  if (params_.output_tb_img_profile == "auto") {
+    profile = select_tb_img_profile(
+      static_cast<uint32_t>(out_w), static_cast<uint32_t>(out_h), payload_size);
+  } else {
+    profile = tb_img_profile_from_string(params_.output_tb_img_profile);
+  }
+  if (payload_size > tb_img_profile_max_size(profile)) {
+    RCLCPP_WARN(get_logger(), "output %ux%u (%u B) exceeds TbMsg profile capacity",
+                out_w, out_h, payload_size);
+    return false;
+  }
+
+  tb_img_pub_ = std::make_unique<LoanedTbImgPublisher>(this, params_.output_topic, profile);
+  output_width_ = out_w;
+  output_height_ = out_h;
+  RCLCPP_INFO(get_logger(), "tb_img zero-copy publisher created on %s (%dx%d, %s)",
+              params_.output_topic.c_str(), out_w, out_h,
+              tb_img_profile_name(profile));
   return true;
 }
 

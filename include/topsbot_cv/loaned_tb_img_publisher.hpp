@@ -45,6 +45,32 @@ inline TbImgProfile select_tb_img_profile(
   return TbImgProfile::MSG_1080P;
 }
 
+inline uint32_t tb_img_profile_max_size(TbImgProfile profile)
+{
+  switch (profile) {
+    case TbImgProfile::MSG_480P:
+      return tb_img_msgs::msg::TbMsg480P::MAX_SIZE;
+    case TbImgProfile::MSG_540P:
+      return tb_img_msgs::msg::TbMsg540P::MAX_SIZE;
+    case TbImgProfile::MSG_1080P:
+      return tb_img_msgs::msg::TbMsg1080P::MAX_SIZE;
+  }
+  return 0;
+}
+
+inline const char * tb_img_profile_name(TbImgProfile profile)
+{
+  switch (profile) {
+    case TbImgProfile::MSG_480P:
+      return "480p";
+    case TbImgProfile::MSG_540P:
+      return "540p";
+    case TbImgProfile::MSG_1080P:
+      return "1080p";
+  }
+  return "?";
+}
+
 inline TbImgProfile tb_img_profile_from_string(const std::string & profile)
 {
   if (profile == "480p" || profile == "TbMsg480P") {
@@ -101,6 +127,11 @@ bool publish_loaned_tb_img_nv12(
   msg.data_size = data_size;
   msg.time_stamp = stamp;
   msg.index = frame_index++;
+  // Copy path: the payload is CPU-written, so there is no physical address
+  // to expose. Must be set explicitly — the loaned slot may be reused and
+  // would otherwise carry the previous frame's phys_addr, which downstream
+  // hardware consumers would then LOOKUP incorrectly.
+  msg.phys_addr = 0;
 
   publisher->publish(std::move(loaned_msg));
   return true;
@@ -152,7 +183,38 @@ public:
     return false;
   }
 
+  // Borrow a loaned message, let the callback fill the payload (possibly
+  // via hardware DMA), then publish. fill is a generic lambda over the three
+  // TbMsg types; returning false abandons the publish (loaned is returned).
+  template<typename Fn>
+  bool borrow_fill_publish(Fn && fill)
+  {
+    switch (profile_) {
+      case TbImgProfile::MSG_480P:
+        return borrow_fill_publish_impl<tb_img_msgs::msg::TbMsg480P>(pub_480_, fill);
+      case TbImgProfile::MSG_540P:
+        return borrow_fill_publish_impl<tb_img_msgs::msg::TbMsg540P>(pub_540_, fill);
+      case TbImgProfile::MSG_1080P:
+        return borrow_fill_publish_impl<tb_img_msgs::msg::TbMsg1080P>(pub_1080_, fill);
+    }
+    return false;
+  }
+
 private:
+  template<typename MsgT, typename Fn>
+  static bool borrow_fill_publish_impl(
+    const typename rclcpp::Publisher<MsgT>::SharedPtr & publisher, Fn & fill)
+  {
+    auto loaned_msg = publisher->borrow_loaned_message();
+    if (!loaned_msg.is_valid()) {
+      return false;
+    }
+    if (!fill(loaned_msg.get())) {
+      return false;  // fill failed: abandon (loaned destructor returns it)
+    }
+    publisher->publish(std::move(loaned_msg));
+    return true;
+  }
   TbImgProfile profile_;
   rclcpp::Publisher<tb_img_msgs::msg::TbMsg480P>::SharedPtr pub_480_;
   rclcpp::Publisher<tb_img_msgs::msg::TbMsg540P>::SharedPtr pub_540_;

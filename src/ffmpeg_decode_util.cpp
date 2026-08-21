@@ -47,7 +47,8 @@ int decode_jpeg_buffer_to_nv12(
   const size_t jpeg_size,
   NV12Frame * out_frame,
   const int width_hint,
-  const int height_hint)
+  const int height_hint,
+  const uint64_t dma_phys)
 {
   if (!allocator || !jpeg_data || jpeg_size == 0 || !out_frame) {
     TACV_ERROR("invalid arguments");
@@ -63,46 +64,77 @@ int decode_jpeg_buffer_to_nv12(
     return -1;
   }
 
-  const int in_fd = DmabufHeapAlloc(allocator, "carveout-heap", jpeg_size);
-  if (in_fd < 0) {
-    TACV_ERROR("failed to allocate input block");
-    return -1;
-  }
-
-  void * in_buf = mmap(nullptr, jpeg_size, PROT_READ | PROT_WRITE, MAP_SHARED, in_fd, 0);
-  if (in_buf == MAP_FAILED) {
-    TACV_ERROR("failed to mmap input block");
-    close(in_fd);
-    return -1;
-  }
-
-  std::memcpy(in_buf, jpeg_data, jpeg_size);
-  munmap(in_buf, jpeg_size);
-
-  ta_image_t tmp_image{};
   const int nv12_buf_size = width * height * 3 / 2;
   const int out_fd = DmabufHeapAlloc(allocator, "carveout-heap", static_cast<size_t>(nv12_buf_size));
   if (out_fd < 0) {
     TACV_ERROR("failed to allocate output block");
-    close(in_fd);
     return -1;
   }
 
+  ta_image_t tmp_image{};
   const int create_ret = ta_cv_image_create_ext(height, width, FORMAT_NV12, &tmp_image, out_fd);
   if (create_ret != 0) {
     TACV_ERROR("failed to create image");
     close(out_fd);
-    close(in_fd);
     return -1;
   }
 
-  const int dec_ret = ta_cv_image_jpeg_dec(jpeg_size, in_fd, &tmp_image);
-  close(in_fd);
+  int dec_ret = -1;
+  int in_fd = -1;
+  if (dma_phys != 0) {
+    // Zero-copy path: the JPEG payload already lives in a carveout segment
+    // (FastDDS dmabuf backend). Wrap its phys into an fd (offset view) and
+    // hand it straight to the hardware decoder — no copy into a fresh buffer.
+    // View length must cover the whole JPEG (kernel page-aligns it); a too
+    // small view breaks the HW decoder's mmap of the input.
+    uint64_t len = jpeg_size;
+    in_fd = DmabufHeapLookupByPhys(allocator, dma_phys, &len);
+    if (in_fd >= 0) {
+      dec_ret = ta_cv_image_jpeg_dec(jpeg_size, in_fd, &tmp_image);
+      close(in_fd);
+      if (dec_ret != 0) {
+        TACV_ERROR("zero-copy JPEG decode failed (%zu bytes, phys 0x%llx)",
+                   jpeg_size, static_cast<unsigned long long>(dma_phys));
+      } else {
+        TACV_INFO("JPEG zero-copy decode: %dx%d -> NV12 (%d bytes), phys 0x%llx",
+                  width, height, nv12_buf_size,
+                  static_cast<unsigned long long>(dma_phys));
+      }
+    } else {
+      TACV_ERROR("LOOKUP_BY_PHYS failed for 0x%llx (%d), falling back to copy",
+                 static_cast<unsigned long long>(dma_phys), in_fd);
+    }
+  }
+
   if (dec_ret != 0) {
-    TACV_ERROR("failed to decode JPEG (%zu bytes)", jpeg_size);
-    ta_cv_image_destroy_ext(&tmp_image);
-    close(out_fd);
-    return -1;
+    // Fallback path: copy JPEG bytes into a fresh carveout buffer (also used
+    // when the dmabuf backend is not active, dma_phys == 0).
+    in_fd = DmabufHeapAlloc(allocator, "carveout-heap", jpeg_size);
+    if (in_fd < 0) {
+      TACV_ERROR("failed to allocate input block");
+      ta_cv_image_destroy_ext(&tmp_image);
+      close(out_fd);
+      return -1;
+    }
+    void * in_buf = mmap(nullptr, jpeg_size, PROT_READ | PROT_WRITE, MAP_SHARED, in_fd, 0);
+    if (in_buf == MAP_FAILED) {
+      TACV_ERROR("failed to mmap input block");
+      close(in_fd);
+      ta_cv_image_destroy_ext(&tmp_image);
+      close(out_fd);
+      return -1;
+    }
+    std::memcpy(in_buf, jpeg_data, jpeg_size);
+    munmap(in_buf, jpeg_size);
+
+    dec_ret = ta_cv_image_jpeg_dec(jpeg_size, in_fd, &tmp_image);
+    close(in_fd);
+    if (dec_ret != 0) {
+      TACV_ERROR("failed to decode JPEG (%zu bytes)", jpeg_size);
+      ta_cv_image_destroy_ext(&tmp_image);
+      close(out_fd);
+      return -1;
+    }
   }
 
   out_frame->data_size = nv12_buf_size;
@@ -195,10 +227,11 @@ int decode_jpeg_bytes_to_nv12(
   const size_t jpeg_size,
   NV12Frame * out_frame,
   const int width_hint,
-  const int height_hint)
+  const int height_hint,
+  const uint64_t dma_phys)
 {
   return decode_jpeg_buffer_to_nv12(
-    allocator, jpeg_data, jpeg_size, out_frame, width_hint, height_hint);
+    allocator, jpeg_data, jpeg_size, out_frame, width_hint, height_hint, dma_phys);
 }
 
 int decode_to_nv12(BufferAllocator * allocator, const char * file_path, NV12Frame * out_frame)

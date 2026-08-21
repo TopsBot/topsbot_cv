@@ -49,6 +49,16 @@ struct PipelineConfig
 void apply_pipeline_feature(PipelineConfig & config, const std::string & name);
 
 /// Run configured pipeline; returns false on operator failure.
+/// Predict the pipeline output size (must match execute_pipeline's internal
+/// computation), used to pick the TbMsg profile / borrow the loaned output
+/// buffer ahead of time.
+bool predict_output_size(
+  const PipelineConfig & config,
+  int input_width,
+  int input_height,
+  int & out_width,
+  int & out_height);
+
 bool execute_pipeline(
   DmabufAllocator & alloc,
   const TaImage & input,
