@@ -2,6 +2,16 @@
 
 All notable changes to this package are documented here.
 
+## 0.2.1 (2026-09-24)
+
+### Fixed
+
+- Link taCV codec libraries and declare libtacv system dependencies; resolve compile error.
+
+### Changed
+
+- Update script location for release tooling.
+
 ## 0.2.0 (2026-08-19)
 
 ### Added

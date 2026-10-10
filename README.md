@@ -27,7 +27,7 @@ Results can be published on ROS topics or saved under `/tmp/topsbot_cv` when `ne
 ```bash
 # PC: topsbot_cc toolchain
 cd topsbot_cc/topsbot_ws
-./tools/build.sh -s topsbot_cv -c "-DBUILD_TESTING=ON"
+./tools/scripts/build.sh -s topsbot_cv -c "-DBUILD_TESTING=ON"
 ```
 
 Sync `install/` to the board.

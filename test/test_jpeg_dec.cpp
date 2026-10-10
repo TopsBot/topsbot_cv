@@ -15,9 +15,9 @@ TEST(TopsbotCvJpegDec, ParseHeaderDimensions)
 
   std::ifstream in(topsbot_cv_test::test_image_path(), std::ios::binary);
   ASSERT_TRUE(in.good());
-  const std::vector<uint8_t> bytes(
-    std::istreambuf_iterator<char>(in),
-    std::istreambuf_iterator<char>());
+  const std::istreambuf_iterator<char> begin(in);
+  const std::istreambuf_iterator<char> end;
+  const std::vector<uint8_t> bytes(begin, end);
   ASSERT_FALSE(bytes.empty());
 
   int width = 0;

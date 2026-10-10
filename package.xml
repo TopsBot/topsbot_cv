@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>topsbot_cv</name>
-  <version>0.2.0</version>
+  <version>0.2.1</version>
   <description>TOPSBOT hardware-accelerated image processing via ta-cv (SPP/dmabuf).</description>
 
   <maintainer email="developer@topsfuture.com">TOPSBOT</maintainer>
@@ -15,6 +15,11 @@
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>tb_img_msgs</depend>
+  <depend>libtacv</depend>
+  <depend>libdmabufheap</depend>
+  <depend>libtasys</depend>
+  <depend>libdec24</depend>
+  <depend>libenc24</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

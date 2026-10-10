@@ -43,9 +43,13 @@ target_include_directories(${PROJECT_NAME}_lib PUBLIC
 )
 
 target_link_directories(${PROJECT_NAME}_lib PUBLIC ${TOPSBOT_TACV_LIB_DIR})
+target_link_options(${PROJECT_NAME}_lib PUBLIC "-Wl,-rpath-link,${TOPSBOT_TACV_LIB_DIR}")
 
 target_link_libraries(${PROJECT_NAME}_lib
   tacocv
+  taco_jpegdec
+  taco_ppvdec
+  enc24
   dmabufheap
   tacosys
 )

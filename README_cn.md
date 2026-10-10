@@ -27,7 +27,7 @@
 ```bash
 # PC：topsbot_cc 工具链环境
 cd topsbot_cc/topsbot_ws
-./tools/build.sh -s topsbot_cv -c "-DBUILD_TESTING=ON"
+./tools/scripts/build.sh -s topsbot_cv -c "-DBUILD_TESTING=ON"
 ```
 
 将 `install/` 同步到板卡。
